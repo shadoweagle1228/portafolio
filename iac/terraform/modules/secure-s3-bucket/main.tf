@@ -4,21 +4,53 @@ locals {
     DataClassification = var.data_classification
     Owner              = var.owner
     Compliance         = "pci-dss-v4"
+    # Req. 10.2: debe estar cubierto por CloudTrail data events
+    AuditTrail = "cloudtrail-s3-data-events-required"
   })
 }
 
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
+data "aws_region" "current" {}
 
-# ---------- KMS (Req. 3.5 / 3.7.4) ----------
+# ---------- KMS: privilegio minimo, separacion de funciones (Req. 7 / 3.6-3.7) ----------
+# Sin kms:* para root: los administradores conservan kms:PutKeyPolicy para evitar el bloqueo de la llave.
 data "aws_iam_policy_document" "kms" {
   statement {
-    sid       = "AdminAccountRoot"
-    actions   = ["kms:*"]
+    sid    = "KeyAdministrators"
+    effect = "Allow"
+    actions = [
+      "kms:Create*", "kms:Describe*", "kms:Enable*", "kms:List*", "kms:Put*", "kms:Update*",
+      "kms:Revoke*", "kms:Disable*", "kms:Get*", "kms:Delete*", "kms:TagResource",
+      "kms:UntagResource", "kms:ScheduleKeyDeletion", "kms:CancelKeyDeletion",
+    ]
     resources = ["*"]
     principals {
       type        = "AWS"
-      identifiers = ["arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root"]
+      identifiers = var.key_admin_role_arns
+    }
+  }
+
+  statement {
+    sid    = "KeyUsersViaS3Only"
+    effect = "Allow"
+    actions = [
+      "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey",
+    ]
+    resources = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = var.key_user_role_arns
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["s3.${data.aws_region.current.name}.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "kms:CallerAccount"
+      values   = [data.aws_caller_identity.current.account_id]
     }
   }
 }
@@ -52,6 +84,7 @@ resource "aws_s3_bucket_object_lock_configuration" "logs" {
       days = var.log_retention_days
     }
   }
+  depends_on = [aws_s3_bucket_versioning.logs]
 }
 
 resource "aws_s3_bucket_versioning" "logs" {
@@ -82,12 +115,13 @@ resource "aws_s3_bucket_public_access_block" "logs" {
 resource "aws_s3_bucket_lifecycle_configuration" "logs" {
   bucket = aws_s3_bucket.logs.id
   rule {
-    id     = "archive-after-90-days"
+    id     = "archive-instant-retrieval-after-90-days"
     status = "Enabled"
     filter {}
+    # Glacier Instant Retrieval: acceso en milisegundos durante los 12 meses (Req. 10.5.1)
     transition {
       days          = 90
-      storage_class = "GLACIER"
+      storage_class = "GLACIER_IR"
     }
   }
   depends_on = [aws_s3_bucket_versioning.logs]
@@ -109,13 +143,20 @@ data "aws_iam_policy_document" "logs" {
       values   = ["false"]
     }
   }
+  # Confused deputy: solo el bucket de datos puede entregar logs aqui.
+  # El ARN se construye con el nombre (no con el recurso) para evitar dependencia circular.
   statement {
-    sid       = "AllowS3ServerAccessLogs"
+    sid       = "AllowS3ServerAccessLogsFromDataBucketOnly"
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.logs.arn}/*"]
     principals {
       type        = "Service"
       identifiers = ["logging.s3.amazonaws.com"]
+    }
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = ["arn:${data.aws_partition.current.partition}:s3:::${var.bucket_name}"]
     }
     condition {
       test     = "StringEquals"
@@ -126,8 +167,9 @@ data "aws_iam_policy_document" "logs" {
 }
 
 resource "aws_s3_bucket_policy" "logs" {
-  bucket = aws_s3_bucket.logs.id
-  policy = data.aws_iam_policy_document.logs.json
+  bucket     = aws_s3_bucket.logs.id
+  policy     = data.aws_iam_policy_document.logs.json
+  depends_on = [aws_s3_bucket_public_access_block.logs]
 }
 
 # ---------- Bucket de datos ----------
@@ -170,6 +212,8 @@ resource "aws_s3_bucket_logging" "data" {
   bucket        = aws_s3_bucket.data.id
   target_bucket = aws_s3_bucket.logs.id
   target_prefix = "${var.bucket_name}/"
+  # El destino debe autorizar la entrega antes de habilitar el logging
+  depends_on = [aws_s3_bucket_policy.logs]
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "data" {
@@ -215,8 +259,10 @@ data "aws_iam_policy_document" "data" {
       values   = ["1.2"]
     }
   }
+  # "IfExists": las subidas SIN header se cifran con el KMS por defecto;
+  # solo se bloquean las que piden explicitamente otro algoritmo (p. ej. AES256).
   statement {
-    sid       = "DenyUnencryptedUploads"
+    sid       = "DenyExplicitNonKmsEncryption"
     effect    = "Deny"
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.data.arn}/*"]

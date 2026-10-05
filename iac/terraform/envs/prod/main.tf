@@ -13,9 +13,21 @@ provider "aws" {
 }
 
 module "secure_bucket" {
-  source             = "../../modules/secure-s3-bucket"
-  bucket_name        = "edwin-portafolio-prod-cde-data"
-  environment        = "prod"
-  owner              = "platform-team"
-  log_retention_days = 365
+  source              = "../../modules/secure-s3-bucket"
+  bucket_name         = "edwin-portafolio-prod-cde-data"
+  environment         = "prod"
+  owner               = "platform-team"
+  key_admin_role_arns = var.key_admin_role_arns
+  key_user_role_arns  = var.key_user_role_arns
+  log_retention_days  = 365
+}
+
+variable "key_admin_role_arns" {
+  type        = list(string)
+  description = "Roles que administran la llave KMS; incluir el rol de despliegue"
+}
+
+variable "key_user_role_arns" {
+  type        = list(string)
+  description = "Roles de aplicacion que usan la llave via S3"
 }

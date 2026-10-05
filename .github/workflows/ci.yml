@@ -71,4 +71,4 @@ jobs:
       - run: npm i -g aws-cdk
       - run: pip install -r requirements.txt
       - run: pytest -q
-      - run: cdk synth -q   # cdk-nag falla el synth si hay incumplimientos
+      - run: cdk synth -q -c key_admin_role_arns=arn:aws:iam::111122223333:role/key-admin -c key_user_role_arns=arn:aws:iam::111122223333:role/app-role   # cdk-nag falla el synth si hay incumplimientos

@@ -43,6 +43,24 @@ variable "log_retention_days" {
   }
 }
 
+variable "key_admin_role_arns" {
+  type        = list(string)
+  description = "Roles IAM que administran la llave KMS (sin acceso a datos). Debe incluir el rol que ejecuta terraform. Deben existir."
+  validation {
+    condition     = length(var.key_admin_role_arns) > 0
+    error_message = "Se requiere al menos un administrador de la llave."
+  }
+}
+
+variable "key_user_role_arns" {
+  type        = list(string)
+  description = "Roles IAM de aplicaciones que cifran/descifran datos (solo via S3)."
+  validation {
+    condition     = length(var.key_user_role_arns) > 0
+    error_message = "Se requiere al menos un rol usuario de la llave."
+  }
+}
+
 variable "tags" {
   type    = map(string)
   default = {}
@@ -58,4 +76,9 @@ output "kms_key_arn" {
 
 output "logs_bucket_name" {
   value = aws_s3_bucket.logs.id
+}
+
+output "cloudtrail_data_events_resource_arn" {
+  description = "Agregar a los Advanced Event Selectors del trail (S3 data events, Req. 10.2)."
+  value       = "${aws_s3_bucket.data.arn}/"
 }

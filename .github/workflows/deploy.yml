@@ -35,6 +35,9 @@ jobs:
         uses: hashicorp/setup-terraform@v3
       - if: inputs.tool == 'terraform'
         working-directory: iac/terraform/envs/${{ inputs.environment }}
+        env:
+          TF_VAR_key_admin_role_arns: ${{ vars.KEY_ADMIN_ROLE_ARNS_JSON }}
+          TF_VAR_key_user_role_arns: ${{ vars.KEY_USER_ROLE_ARNS_JSON }}
         run: |
           terraform init
           terraform plan -out=tfplan
@@ -46,7 +49,7 @@ jobs:
         run: |
           pip install -r requirements.txt
           npm i -g aws-cdk
-          cdk deploy --require-approval never -c environment=${{ inputs.environment }}
+          cdk deploy --require-approval never -c environment=${{ inputs.environment }} -c key_admin_role_arns=${{ vars.KEY_ADMIN_ROLE_ARNS }} -c key_user_role_arns=${{ vars.KEY_USER_ROLE_ARNS }}
 
       - name: CloudFormation
         if: inputs.tool == 'cloudformation'
