@@ -50,5 +50,8 @@ jobs:
 
       - name: CloudFormation
         if: inputs.tool == 'cloudformation'
+        env:
+          KEY_ADMIN_ROLE_ARNS: ${{ vars.KEY_ADMIN_ROLE_ARNS }}
+          KEY_USER_ROLE_ARNS: ${{ vars.KEY_USER_ROLE_ARNS }}
         run: |
           ./scripts/deploy-cfn.sh ${{ inputs.environment }}

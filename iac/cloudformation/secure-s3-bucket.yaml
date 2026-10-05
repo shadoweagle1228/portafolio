@@ -1,7 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
   Bucket S3 seguro alineado a PCI DSS v4.0 (Req. 1, 3, 4, 7, 10).
-  Incluye KMS CMK con rotacion, bucket de logs inmutable (Object Lock),
+  Incluye KMS CMK con rotacion y politica de privilegio minimo (separacion
+  administradores / usuarios), bucket de logs inmutable (Object Lock),
   TLS obligatorio, versionado y bloqueo de acceso publico.
 
 Parameters:
@@ -21,11 +22,21 @@ Parameters:
     Type: Number
     Default: 365          # PCI DSS 10.5.1: 12 meses de retencion
     MinValue: 365
+  KeyAdminRoleArns:
+    Type: CommaDelimitedList
+    Description: >
+      ARNs de roles IAM que ADMINISTRAN la llave (seguridad/DevOps). Sin acceso a datos.
+      Debe incluir el rol que ejecuta este despliegue. Los roles deben existir.
+  KeyUserRoleArns:
+    Type: CommaDelimitedList
+    Description: ARNs de roles IAM de aplicaciones/servicios que cifran y descifran datos (via S3).
 
 Conditions:
   IsProd: !Equals [!Ref Environment, prod]
 
 Resources:
+  # Req. 7 / 3.6-3.7: separacion de funciones. Sin kms:* para root: la delegacion a IAM
+  # se elimina; los administradores conservan kms:PutKeyPolicy para evitar el bloqueo de la llave.
   DataKey:
     Type: AWS::KMS::Key
     DeletionPolicy: Retain
@@ -36,16 +47,46 @@ Resources:
       KeyPolicy:
         Version: "2012-10-17"
         Statement:
-          - Sid: AdminAccountRoot
+          - Sid: KeyAdministrators
             Effect: Allow
-            Principal: { AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root" }
-            Action: "kms:*"
+            Principal: { AWS: !Ref KeyAdminRoleArns }
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:TagResource"
+              - "kms:UntagResource"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
             Resource: "*"
-      Tags: &tags
+          - Sid: KeyUsersViaS3Only
+            Effect: Allow
+            Principal: { AWS: !Ref KeyUserRoleArns }
+            Action:
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "kms:ViaService": !Sub "s3.${AWS::Region}.amazonaws.com"
+                "kms:CallerAccount": !Ref "AWS::AccountId"
+      Tags:
         - { Key: Environment, Value: !Ref Environment }
         - { Key: DataClassification, Value: !Ref DataClassification }
         - { Key: Owner, Value: !Ref Owner }
         - { Key: Compliance, Value: pci-dss-v4 }
+        # Req. 10.2: este recurso debe estar cubierto por CloudTrail data events
+        - { Key: AuditTrail, Value: cloudtrail-s3-data-events-required }
 
   DataKeyAlias:
     Type: AWS::KMS::Alias
@@ -66,7 +107,7 @@ Resources:
           DefaultRetention: { Mode: COMPLIANCE, Days: !Ref LogRetentionDays }
       OwnershipControls:
         Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
-      PublicAccessBlockConfiguration: &pab
+      PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
         IgnorePublicAcls: true
@@ -77,10 +118,17 @@ Resources:
       VersioningConfiguration: { Status: Enabled }
       LifecycleConfiguration:
         Rules:
-          - Id: archive-after-90-days     # 3 meses disponibles inmediatamente
+          # Glacier Instant Retrieval: acceso en milisegundos durante todo el periodo
+          # de retencion (Req. 10.5.1: 12 meses, 3 inmediatamente disponibles).
+          - Id: archive-instant-retrieval-after-90-days
             Status: Enabled
-            Transitions: [{ StorageClass: GLACIER, TransitionInDays: 90 }]
-      Tags: *tags
+            Transitions: [{ StorageClass: GLACIER_IR, TransitionInDays: 90 }]
+      Tags:
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: DataClassification, Value: !Ref DataClassification }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Compliance, Value: pci-dss-v4 }
+        - { Key: AuditTrail, Value: cloudtrail-s3-data-events-required }
 
   AccessLogsBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -97,23 +145,31 @@ Resources:
               - !GetAtt AccessLogsBucket.Arn
               - !Sub "${AccessLogsBucket.Arn}/*"
             Condition: { Bool: { "aws:SecureTransport": "false" } }
-          - Sid: AllowS3ServerAccessLogs
+          # Confused deputy: solo el bucket de datos puede entregar logs aqui.
+          # El ARN se construye con el parametro (no GetAtt) para evitar dependencia circular.
+          - Sid: AllowS3ServerAccessLogsFromDataBucketOnly
             Effect: Allow
             Principal: { Service: logging.s3.amazonaws.com }
             Action: "s3:PutObject"
             Resource: !Sub "${AccessLogsBucket.Arn}/*"
             Condition:
+              ArnEquals: { "aws:SourceArn": !Sub "arn:${AWS::Partition}:s3:::${BucketName}" }
               StringEquals: { "aws:SourceAccount": !Ref "AWS::AccountId" }
 
   DataBucket:
     Type: AWS::S3::Bucket
+    DependsOn: AccessLogsBucketPolicy      # el destino de logs debe autorizar antes de habilitar el logging
     DeletionPolicy: !If [IsProd, Retain, Delete]
     UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Ref BucketName
       OwnershipControls:
         Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
-      PublicAccessBlockConfiguration: *pab       # Req. 1 / 7
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - BucketKeyEnabled: true
@@ -130,7 +186,12 @@ Resources:
             Status: Enabled
             NoncurrentVersionExpiration: { NoncurrentDays: 365 }
             AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }
-      Tags: *tags
+      Tags:
+        - { Key: Environment, Value: !Ref Environment }
+        - { Key: DataClassification, Value: !Ref DataClassification }
+        - { Key: Owner, Value: !Ref Owner }
+        - { Key: Compliance, Value: pci-dss-v4 }
+        - { Key: AuditTrail, Value: cloudtrail-s3-data-events-required }
 
   DataBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -151,7 +212,9 @@ Resources:
             Action: "s3:*"
             Resource: [!GetAtt DataBucket.Arn, !Sub "${DataBucket.Arn}/*"]
             Condition: { NumericLessThan: { "s3:TlsVersion": 1.2 } }
-          - Sid: DenyUnencryptedUploads
+          # Se conserva: "IfExists" permite subidas SIN header (se aplica el KMS por defecto)
+          # y solo bloquea las que piden explicitamente otro algoritmo (p. ej. AES256).
+          - Sid: DenyExplicitNonKmsEncryption
             Effect: Deny
             Principal: "*"
             Action: "s3:PutObject"
@@ -163,3 +226,7 @@ Outputs:
   BucketArn: { Value: !GetAtt DataBucket.Arn }
   KmsKeyArn: { Value: !GetAtt DataKey.Arn }
   LogsBucketName: { Value: !Ref AccessLogsBucket }
+  CloudTrailDataEventsResourceArn:
+    Description: >
+      Agregar a los Advanced Event Selectors del trail organizacional (Data events S3, Req. 10.2).
+    Value: !Sub "${DataBucket.Arn}/"

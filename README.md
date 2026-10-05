@@ -1,6 +1,6 @@
 # Portafolio de Ingeniería Cloud — Secure-by-Design
 
-Repositorio que demuestra, con un **caso de uso único y coherente** (almacenamiento S3 conforme a **PCI DSS v4.0**),
+Repositorio que demuestra, con un **caso de uso único** (almacenamiento S3 conforme a **PCI DSS v4.0**),
 la trayectoria profesional en arquitectura cloud, IaC, CI/CD, Kubernetes, desarrollo Java/Python y AI-DLC.
 
 > Principios: **Security First** · **Arquitectura hexagonal** · **Clean Code** · **IaC reproducible** · **Todo probado y escaneado en CI**
