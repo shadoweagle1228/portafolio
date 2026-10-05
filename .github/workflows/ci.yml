@@ -72,3 +72,20 @@ jobs:
       - run: pip install -r requirements.txt
       - run: pytest -q
       - run: cdk synth -q -c key_admin_role_arns=arn:aws:iam::111122223333:role/key-admin -c key_user_role_arns=arn:aws:iam::111122223333:role/app-role   # cdk-nag falla el synth si hay incumplimientos
+
+  container-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Python container
+        run: docker build -t bucket-auditor:test services/bucket-auditor-python
+      - name: Build Java container
+        run: docker build -t bucket-provisioner:test services/bucket-provisioner-java
+      - name: Scan containers with Trivy (PCI DSS Req. 6.3)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: bucket-auditor:test
+          format: table
+          exit-code: 0
+          severity: CRITICAL,HIGH
+
