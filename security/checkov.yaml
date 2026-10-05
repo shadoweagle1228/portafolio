@@ -1,0 +1,11 @@
+framework:
+  - terraform
+  - cloudformation
+quiet: true
+compact: true
+skip-check:
+  # Justificadas y documentadas; cualquier excepcion nueva requiere ADR
+  - CKV_AWS_18    # Logs bucket no se loguea a si mismo (evita recursion); ver docs/pci-dss-mapping.md
+  - CKV_AWS_144   # Replicacion cross-region no requerida en dev
+  - CKV2_AWS_62   # Notificaciones de eventos fuera de alcance del modulo
+  - CKV_AWS_145   # Logs bucket usa SSE-S3 intencionalmente (requisito de S3 server access logs)

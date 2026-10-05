@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: services/bucket-auditor-python } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: mypy src
+      - run: bandit -r src -q
+      - run: pip-audit
+      - run: pytest -q
+
+  java:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: services/bucket-provisioner-java } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "21", cache: maven }
+      - run: mvn -B -ntp verify
+
+  iac-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkov (Terraform + CloudFormation)
+        uses: bridgecrew/checkov-action@v12
+        with:
+          directory: iac
+          framework: terraform,cloudformation
+          config_file: security/checkov.yaml
+      - name: cfn-lint
+        run: pip install cfn-lint && cfn-lint iac/cloudformation/*.yaml
+      - name: Terraform fmt/validate
+        uses: hashicorp/setup-terraform@v3
+      - run: |
+          terraform -chdir=iac/terraform/envs/dev init -backend=false
+          terraform -chdir=iac/terraform/envs/dev validate
+          terraform fmt -check -recursive iac/terraform
+      - name: Kubernetes manifests (kubeconform)
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          kubectl kustomize k8s/keycloak/overlays/dev | ./kubeconform -strict -ignore-missing-schemas -summary
+
+  cdk:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: iac/cdk } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: npm i -g aws-cdk
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+      - run: cdk synth -q   # cdk-nag falla el synth si hay incumplimientos

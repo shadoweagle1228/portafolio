@@ -1,0 +1,35 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+*.tfvars
+
+# CDK / Node
+cdk.out/
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Java
+target/
+
+# Secretos y entornos (security first)
+.env
+*.pem
+*.key
+web-identity-token
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

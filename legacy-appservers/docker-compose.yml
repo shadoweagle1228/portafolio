@@ -1,0 +1,25 @@
+# Referencia de modernización: WildFly + LDAP en contenedores
+# Solo para laboratorio local. Los secretos vienen de un .env no versionado.
+services:
+  ldap:
+    image: osixia/openldap:1.5.0
+    environment:
+      LDAP_ORGANISATION: "Portafolio"
+      LDAP_DOMAIN: "portafolio.local"
+      LDAP_ADMIN_PASSWORD: "${LDAP_ADMIN_PASSWORD:?define en .env}"
+    ports: ["127.0.0.1:389:389"]
+    volumes: [ldap-data:/var/lib/ldap]
+
+  wildfly:
+    build: .
+    depends_on: [ldap]
+    ports:
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    user: "1000:1000"
+
+volumes:
+  ldap-data:

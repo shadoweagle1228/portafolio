@@ -1,0 +1,87 @@
+image: atlassian/default-image:4
+
+definitions:
+  caches:
+    pip: ~/.cache/pip
+  steps:
+    - step: &python-tests
+        name: Python - lint, SAST y tests
+        image: python:3.12
+        caches: [pip]
+        script:
+          - cd services/bucket-auditor-python
+          - pip install -e ".[dev]"
+          - ruff check .
+          - bandit -r src -q
+          - pip-audit
+          - pytest -q
+    - step: &java-tests
+        name: Java - build y tests
+        image: maven:3.9-eclipse-temurin-21
+        caches: [maven]
+        script:
+          - cd services/bucket-provisioner-java
+          - mvn -B -ntp verify
+    - step: &iac-scan
+        name: IaC - Checkov y cfn-lint
+        image: python:3.12
+        script:
+          - pip install checkov cfn-lint
+          - checkov -d iac --framework terraform cloudformation --config-file security/checkov.yaml
+          - cfn-lint iac/cloudformation/*.yaml
+    - step: &deploy-tf
+        name: Terraform plan/apply
+        image: hashicorp/terraform:1.9
+        oidc: true      # OIDC de Bitbucket -> rol IAM, sin llaves estaticas
+        script:
+          - export AWS_REGION=us-east-1
+          - export AWS_ROLE_ARN=$AWS_DEPLOY_ROLE_ARN
+          - export AWS_WEB_IDENTITY_TOKEN_FILE=$(pwd)/web-identity-token
+          - echo $BITBUCKET_STEP_OIDC_TOKEN > $(pwd)/web-identity-token
+          - cd iac/terraform/envs/$DEPLOYMENT_ENV
+          - terraform init
+          - terraform plan -out=tfplan
+          - terraform apply -auto-approve tfplan
+
+pipelines:
+  pull-requests:
+    '**':
+      - parallel:
+          - step: *python-tests
+          - step: *java-tests
+          - step: *iac-scan
+  branches:
+    main:
+      - parallel:
+          - step: *python-tests
+          - step: *java-tests
+          - step: *iac-scan
+      - step:
+          <<: *deploy-tf
+          name: Deploy dev
+          deployment: dev
+          script:
+            - export DEPLOYMENT_ENV=dev
+            - export AWS_REGION=us-east-1
+            - export AWS_ROLE_ARN=$AWS_DEPLOY_ROLE_ARN
+            - export AWS_WEB_IDENTITY_TOKEN_FILE=$(pwd)/web-identity-token
+            - echo $BITBUCKET_STEP_OIDC_TOKEN > $(pwd)/web-identity-token
+            - cd iac/terraform/envs/dev
+            - terraform init
+            - terraform plan -out=tfplan
+            - terraform apply -auto-approve tfplan
+      - step:
+          name: Deploy prod (manual)
+          deployment: production
+          trigger: manual
+          oidc: true
+          image: hashicorp/terraform:1.9
+          script:
+            - export AWS_REGION=us-east-1
+            - export AWS_ROLE_ARN=$AWS_DEPLOY_ROLE_ARN
+            - export AWS_WEB_IDENTITY_TOKEN_FILE=$(pwd)/web-identity-token
+            - echo $BITBUCKET_STEP_OIDC_TOKEN > $(pwd)/web-identity-token
+            - cd iac/terraform/envs/prod
+            - terraform init
+            - terraform plan -out=tfplan
+            - terraform apply -auto-approve tfplan

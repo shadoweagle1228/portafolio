@@ -1,0 +1,8 @@
+{
+  "app": "python3 app.py",
+  "watch": { "include": ["**"], "exclude": ["tests", ".venv", "cdk.out"] },
+  "context": {
+    "@aws-cdk/aws-s3:createDefaultLoggingPolicy": true,
+    "@aws-cdk/core:checkSecretUsage": true
+  }
+}

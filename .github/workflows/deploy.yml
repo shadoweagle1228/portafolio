@@ -1,0 +1,54 @@
+name: deploy-secure-storage
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Ambiente destino
+        type: choice
+        options: [dev, qa, prod]
+        required: true
+      tool:
+        description: Herramienta IaC
+        type: choice
+        options: [terraform, cdk, cloudformation]
+        required: true
+
+permissions:
+  id-token: write   # OIDC: sin llaves de larga duracion (security first)
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}   # aprobaciones manuales para prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Terraform
+        if: inputs.tool == 'terraform'
+        uses: hashicorp/setup-terraform@v3
+      - if: inputs.tool == 'terraform'
+        working-directory: iac/terraform/envs/${{ inputs.environment }}
+        run: |
+          terraform init
+          terraform plan -out=tfplan
+          terraform apply -auto-approve tfplan
+
+      - name: CDK
+        if: inputs.tool == 'cdk'
+        working-directory: iac/cdk
+        run: |
+          pip install -r requirements.txt
+          npm i -g aws-cdk
+          cdk deploy --require-approval never -c environment=${{ inputs.environment }}
+
+      - name: CloudFormation
+        if: inputs.tool == 'cloudformation'
+        run: |
+          ./scripts/deploy-cfn.sh ${{ inputs.environment }}

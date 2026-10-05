@@ -1,0 +1,31 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: baseline-security
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: no-latest-tag
+      match: { any: [{ resources: { kinds: [Pod] } }] }
+      validate:
+        message: "Las imagenes deben tener tag fijo (no :latest)."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"
+    - name: require-run-as-non-root
+      match: { any: [{ resources: { kinds: [Pod] } }] }
+      validate:
+        message: "Los contenedores deben ejecutarse como no-root."
+        pattern:
+          spec:
+            securityContext: { runAsNonRoot: true }
+    - name: require-limits
+      match: { any: [{ resources: { kinds: [Pod] } }] }
+      validate:
+        message: "Se requieren limits de memoria."
+        pattern:
+          spec:
+            containers:
+              - resources: { limits: { memory: "?*" } }
