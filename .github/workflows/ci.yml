@@ -40,14 +40,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Install security linters (Checkov & cfn-lint)
+        run: pip install checkov cfn-lint
       - name: Checkov (Terraform + CloudFormation)
-        uses: bridgecrew/checkov-action@v12
-        with:
-          directory: iac
-          framework: terraform,cloudformation
-          config_file: security/checkov.yaml
+        run: checkov -d iac --framework terraform,cloudformation --config-file security/checkov.yaml
       - name: cfn-lint
-        run: pip install cfn-lint && cfn-lint iac/cloudformation/*.yaml
+        run: cfn-lint iac/cloudformation/*.yaml
       - name: Terraform fmt/validate
         uses: hashicorp/setup-terraform@v3
       - run: |
