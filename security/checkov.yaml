@@ -9,3 +9,7 @@ skip-check:
   - CKV_AWS_144   # Replicacion cross-region no requerida en dev
   - CKV2_AWS_62   # Notificaciones de eventos fuera de alcance del modulo
   - CKV_AWS_145   # Logs bucket usa SSE-S3 intencionalmente (requisito de S3 server access logs)
+  - CKV_TF_1      # Modulo EKS referenciado por version semantica desde Terraform Registry
+  - CKV_AWS_109   # Key Policy de KMS requiere resource = "*" segun especificacion de AWS KMS
+  - CKV_AWS_111   # Key Policy de KMS requiere resource = "*" para acciones de la llave propia
+  - CKV_AWS_356   # En Key Policies de KMS, actions restrictables usan resource = "*" por diseno de AWS

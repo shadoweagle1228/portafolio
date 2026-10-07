@@ -32,10 +32,26 @@ variable "admin_role_arn" {
   description = "Rol IAM (SSO) con acceso admin al cluster"
 }
 
+data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
+
+data "aws_iam_policy_document" "eks_kms" {
+  statement {
+    sid       = "KeyAdmin"
+    actions   = ["kms:*"]
+    resources = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+  }
+}
+
 # CMK para cifrar secretos de Kubernetes en etcd (envelope encryption)
 resource "aws_kms_key" "eks" {
   description         = "Cifrado de secretos de ${var.cluster_name}"
   enable_key_rotation = true
+  policy              = data.aws_iam_policy_document.eks_kms.json
 }
 
 module "eks" {

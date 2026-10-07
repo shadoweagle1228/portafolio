@@ -123,6 +123,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
       days          = 90
       storage_class = "GLACIER_IR"
     }
+    abort_incomplete_multipart_upload { days_after_initiation = 7 }
   }
   depends_on = [aws_s3_bucket_versioning.logs]
 }
