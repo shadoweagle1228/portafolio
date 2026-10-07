@@ -28,3 +28,7 @@ ignore = ["S101"]
 
 [tool.mypy]
 strict = true
+
+[[tool.mypy.overrides]]
+module = ["boto3.*", "boto3", "botocore.*", "botocore"]
+ignore_missing_imports = true

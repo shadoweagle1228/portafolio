@@ -4,13 +4,15 @@ from __future__ import annotations
 import json
 
 import boto3
+from typing import Any
+
 from botocore.exceptions import ClientError
 
 from auditor.domain.model import BucketConfiguration
 
 
 class Boto3BucketInspector:
-    def __init__(self, s3_client=None, kms_client=None) -> None:
+    def __init__(self, s3_client: Any = None, kms_client: Any = None) -> None:
         self._s3 = s3_client or boto3.client("s3")
         self._kms = kms_client or boto3.client("kms")
 
@@ -46,7 +48,8 @@ class Boto3BucketInspector:
 
     def _rotation(self, key_id: str) -> bool | None:
         try:
-            return self._kms.get_key_rotation_status(KeyId=key_id)["KeyRotationEnabled"]
+            val = self._kms.get_key_rotation_status(KeyId=key_id)["KeyRotationEnabled"]
+            return bool(val)
         except ClientError:
             return None
 
