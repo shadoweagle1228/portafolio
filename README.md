@@ -20,7 +20,10 @@ la trayectoria profesional en arquitectura cloud, IaC, CI/CD, Kubernetes, desarr
 | [`Jenkinsfile`](Jenkinsfile) | Build, SonarQube, Selenium, aprobación | Jenkins |
 | [`observability`](observability) | Alarmas CloudWatch, monitor Datadog, dashboard Grafana | Monitoreo |
 | [`security`](security) · [`scripts/seccheck.sh`](scripts/seccheck.sh) | Checkov, cfn-lint, Prowler PCI 4.0 | SecCheck / WAFR |
-| [`ai-dlc`](ai-dlc) | Ejemplo completo Inception → Construction → Operations | AI-DLC |
+| [`ai-dlc`](ai-dlc) | Metodología AI-DLC: Bitácora de validación humana, cero respuestas perdidas y anti-alucinaciones | AI-DLC |
+| [`ai/skills`](ai/skills) | Skills especializadas para agentes (Kiro, Google Gemini/Antigravity): auditoría PCI y WAFR | AI Skills |
+| [`ai/mcp-server`](ai/mcp-server) | Servidor Model Context Protocol (MCP) de solo lectura para auditoría de buckets | MCP Server |
+| [`ai/rag-assistant`](ai/rag-assistant) | Asistente RAG efímero serverless en CDK (Bedrock + S3 + Lambda, desplegable y destructible) | Generative AI & RAG |
 | [`governance`](governance) | SCPs, tag policy, Budgets, reglas AWS Config | Gobierno y control de costos |
 | [`landing-zone`](landing-zone) | Organizations (OUs/cuentas), CloudTrail org inmutable, GuardDuty | Multicuenta |
 | [`wafr`](wafr) | Plantilla de reporte WAFR/SecCheck + ejemplo anonimizado | Well-Architected / SecCheck |
