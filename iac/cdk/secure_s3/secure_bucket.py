@@ -1,4 +1,5 @@
 """Construct reutilizable: bucket S3 alineado a PCI DSS v4.0."""
+import cdk_nag
 from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack, Tags
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_kms as kms
@@ -165,6 +166,30 @@ class SecureBucket(Construct):
             Tags.of(construct).add("Compliance", "pci-dss-v4")
             # Req. 10.2: debe estar cubierto por CloudTrail data events
             Tags.of(construct).add("AuditTrail", "cloudtrail-s3-data-events-required")
+
+        # Supresiones justificadas para cdk-nag / PCI DSS 3.2.1:
+        cdk_nag.NagSuppressions.add_resource_suppressions(
+            self.logs_bucket,
+            [
+                {
+                    "id": "PCI.DSS.321-S3BucketReplicationEnabled",
+                    "reason": "Replicacion cross-region no requerida en ambiente dev/demostracion; ver docs/pci-dss-mapping.md.",
+                },
+                {
+                    "id": "PCI.DSS.321-S3DefaultEncryptionKMS",
+                    "reason": "El bucket de server access logs usa cifrado SSE-S3 (AES256) por diseno y compatibilidad con el servicio de logging de AWS.",
+                },
+            ],
+        )
+        cdk_nag.NagSuppressions.add_resource_suppressions(
+            self.bucket,
+            [
+                {
+                    "id": "PCI.DSS.321-S3BucketReplicationEnabled",
+                    "reason": "Replicacion cross-region no requerida en ambiente dev/demostracion; planificada para fase prod multi-region.",
+                },
+            ],
+        )
 
         CfnOutput(
             self, "CloudTrailDataEventsResourceArn",
